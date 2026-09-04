@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>WAR ARENA — GPU Battlefield</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:#03050c;font-family:'Space Grotesk',system-ui,sans-serif}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#bg{z-index:0}#gl{z-index:1}
+.vig{position:fixed;inset:0;z-index:2;pointer-events:none;background:radial-gradient(ellipse at 50% 45%,transparent 34%,rgba(3,5,12,.84) 100%);animation:breathe 9s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.9}50%{opacity:1}}
+/* faint chromatic lens edge — pure CSS, no GPU cost */
+.chroma{position:fixed;inset:0;z-index:2;pointer-events:none;mix-blend-mode:screen;opacity:.5;
+  background:radial-gradient(ellipse at 50% 50%,transparent 62%,rgba(91,140,255,.05) 82%,rgba(255,93,108,.06) 100%)}
+.hud{position:fixed;z-index:4;pointer-events:none}
+.top{top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:linear-gradient(#03050c,rgba(3,5,12,0))}
+.logo{font-family:'DM Mono',monospace;font-weight:500;letter-spacing:.3em;font-size:13px;color:#eef2f8;text-shadow:0 0 20px rgba(91,140,255,.7)}
+.logo b{color:#5b8cff}
+.live{display:flex;align-items:center;gap:6px;font-family:'DM Mono',monospace;font-size:10px;color:#4fd0a8;letter-spacing:.12em}
+.pd{width:6px;height:6px;border-radius:50%;background:#4fd0a8;box-shadow:0 0 10px #4fd0a8;animation:pl 2s infinite}
+@keyframes pl{0%,100%{opacity:1}50%{opacity:.25}}
+.legend{position:fixed;left:14px;bottom:16px;z-index:4;display:grid;gap:7px;font-family:'DM Mono',monospace;font-size:9px;color:#93a0b5;letter-spacing:.06em;background:rgba(8,12,24,.5);border:1px solid rgba(139,160,200,.14);border-radius:12px;padding:11px 13px;backdrop-filter:blur(16px)}
+.lr{display:flex;align-items:center;gap:8px}.sw{width:16px;height:3px;border-radius:2px}
+.fps{position:fixed;right:14px;bottom:16px;z-index:4;font-family:'DM Mono',monospace;font-size:9px;color:#5a6577;background:rgba(8,12,24,.5);border:1px solid rgba(139,160,200,.14);border-radius:10px;padding:6px 10px;backdrop-filter:blur(12px)}
+#labels{position:fixed;inset:0;z-index:3;pointer-events:none}
+.tk{position:absolute;transform:translate(-50%,-50%);text-align:center;pointer-events:auto;cursor:pointer;transition:transform .2s}
+.tk:hover{transform:translate(-50%,-50%) scale(1.09)}
+.tk .s{font-family:'DM Mono',monospace;font-size:12px;font-weight:600;letter-spacing:.04em}
+.tk .m{font-family:'DM Mono',monospace;font-size:7px;letter-spacing:.14em;opacity:.75;margin-top:1px}
+.tk .fb{font-family:'DM Mono',monospace;font-size:8px;font-weight:500;letter-spacing:.08em;margin-top:4px;border:1px solid;border-radius:20px;padding:2px 7px;display:inline-block;background:rgba(3,5,12,.55);backdrop-filter:blur(6px)}
+.hint{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:4;font-family:'DM Mono',monospace;font-size:10px;color:#5a6577;letter-spacing:.08em;text-align:center;width:90%}
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<canvas id="gl"></canvas>
+<div class="vig"></div>
+<div class="chroma"></div>
+<div id="labels"></div>
+<div class="hud top"><div class="logo">WAR<b>·</b>ARENA</div><div class="live"><span class="pd"></span>BATTLEFIELD · LIVE</div></div>
+<div class="legend">
+  <div class="lr" style="color:#4fd0a8;font-weight:500"><span class="sw" style="background:#4fd0a8"></span>▼ MONEY IN (buying)</div>
+  <div class="lr" style="color:#ff5d6c;font-weight:500"><span class="sw" style="background:#ff5d6c"></span>▲ MONEY OUT (selling)</div>
+  <div class="lr" style="opacity:.6;margin-top:2px"><span class="sw" style="background:#f0b64d"></span>KOL · <span class="sw" style="background:#5b8cff;margin-left:4px"></span>follow</div>
+</div>
+<div class="fps" id="fps">—</div>
+<div class="hint" id="hint">green flowing in = buying · red flowing out = selling · tap a token</div>
+
+<script>
+/* WAR ARENA — GPU-driven battlefield.
+ * KEY IDEA: every particle's motion is computed in the VERTEX SHADER from a
+ * fixed per-particle seed + a single uniform clock. The CPU uploads the static
+ * particle buffers ONCE and then only updates ~10 uniforms per frame. This frees
+ * the CPU entirely, so we can push thousands of particles and gravity-curved
+ * flows while holding 60fps on a phone. Server/VPS is never involved — all
+ * client-side. Data (WorldState) only sets per-token parameters. */
+
+const WORLDS = [
+  { sym:"$VULT", mood:"ATTACK", power:71, threat:38, attention:82, hue:0.60,
+    flow:[["buy","SMART_MONEY",9800],["buy","KOL",7200],["buy","SMART_MONEY",5000],["sell","OTHER",1700],["sell","FOLLOW_WALLET",1000]], event:"BUY_CLUSTER" },
+  { sym:"$RONIN", mood:"ACCUMULATION", power:58, threat:24, attention:49, hue:0.45,
+    flow:[["buy","SMART_MONEY",6100],["buy","SMART_MONEY",4200],["buy","OTHER",2500],["sell","OTHER",700]], event:null },
+  { sym:"$GLASS", mood:"DISTRIBUTION", power:33, threat:66, attention:60, hue:0.09,
+    flow:[["sell","KOL",8400],["sell","SMART_MONEY",5100],["sell","OTHER",3400],["buy","OTHER",1400]], event:"SELL_CLUSTER" },
+  { sym:"$HOLLOW", mood:"BLEEDING", power:18, threat:74, attention:71, hue:0.99,
+    flow:[["sell","SMART_MONEY",12100],["sell","KOL",6900],["sell","OTHER",4900],["buy","OTHER",800]], event:"SELL_CLUSTER" },
+  { sym:"$EMBER", mood:"EMERGING", power:44, threat:19, attention:38, hue:0.55,
+    flow:[["buy","OTHER",1600],["buy","OTHER",1100]], event:null },
+  { sym:"$AEGIS", mood:"DORMANT", power:12, threat:9, attention:8, hue:0.52, flow:[] },
+];
+const LANE = { SMART_MONEY:[0.31,0.82,0.66], KOL:[0.94,0.71,0.30], FOLLOW_WALLET:[0.36,0.55,1.0], OTHER:[0.45,0.50,0.62] };
+const EXIT = [1.0,0.36,0.42];
+const MOOD_HEX={ATTACK:"#5b8cff",DOMINANCE:"#5b8cff",ACCUMULATION:"#4fd0a8",EMERGING:"#6fb6ff",DISTRIBUTION:"#f0b64d",BLEEDING:"#ff5d6c",COLLAPSE:"#ff5d6c",DORMANT:"#5a6577"};
+
+const DPR=Math.min(devicePixelRatio||1,2);
+let W,H,ASP;
+const cv=document.getElementById("gl");
+const gl=cv.getContext("webgl",{antialias:true,alpha:true,premultipliedAlpha:false});
+const bg=document.getElementById("bg"), bx=bg.getContext("2d");
+
+// ---------- layout tokens ----------
+const NW=WORLDS.length;
+WORLDS.forEach((w,i)=>{ const a=i/NW*6.2831*1.25+0.6, r=0.30+i*0.085;
+  w.x=Math.cos(a)*r; w.y=Math.sin(a)*r*0.66;
+  w.core=9+w.attention*0.4; w.haloR=0.055+w.power/100*0.10; });
+
+// ---------- deep-space background (cheap 2D) ----------
+let stars=[];
+function seedBG(){ stars=[]; const n=Math.round((innerWidth*innerHeight)/8000);
+  for(let i=0;i<n;i++) stars.push({x:Math.random(),y:Math.random(),z:Math.random(),tw:Math.random()*6.28}); }
+function drawBG(T){
+  bx.clearRect(0,0,bg.width,bg.height);
+  const clouds=[["#2340c8",0.24,0.28,0.62],["#0d7a5a",0.74,0.68,0.56],["#7a1f9e",0.56,0.40,0.5],["#c23a2e",0.40,0.72,0.36]];
+  clouds.forEach(([c,cx,cy,r],i)=>{ const gx=(cx+0.03*Math.sin(T*0.05+i))*bg.width, gy=(cy+0.03*Math.cos(T*0.04+i))*bg.height;
+    const rad=r*bg.width, g=bx.createRadialGradient(gx,gy,0,gx,gy,rad);
+    g.addColorStop(0,c+"66");g.addColorStop(0.5,c+"22");g.addColorStop(1,c+"00");
+    bx.globalCompositeOperation="screen";bx.fillStyle=g;bx.beginPath();bx.arc(gx,gy,rad,0,6.28);bx.fill(); });
+  bx.globalCompositeOperation="lighter";
+  for(const s of stars){ const tw=0.4+0.6*Math.abs(Math.sin(T*0.8+s.tw));
+    bx.globalAlpha=tw*(0.3+s.z*0.5);bx.fillStyle="#cfe0ff";bx.beginPath();bx.arc(s.x*bg.width,s.y*bg.height,(0.4+s.z*1.6)*DPR,0,6.28);bx.fill(); }
+  bx.globalAlpha=1;bx.globalCompositeOperation="source-over";
+}
+function resize(){ W=cv.width=innerWidth*DPR|0;H=cv.height=innerHeight*DPR|0;cv.style.width=bg.style.width=innerWidth+"px";cv.style.height=bg.style.height=innerHeight+"px";bg.width=W;bg.height=H;ASP=W/H;gl.viewport(0,0,W,H);seedBG(); }
+addEventListener("resize",resize);
+
+// ---------- build STATIC particle buffers (uploaded once) ----------
+// Each particle carries: tokenIndex, kind, laneColor, seed values, phase.
+// The vertex shader animates position from these + uClock. No per-frame CPU work.
+//
+// kinds: 0=core layer, 1=halo, 2=wallet, 3=flow, 4=shock, 5=cosmic dust
+const P_POS=[];    // aSeed: (a0, a1) generic seed floats
+const P_TOK=[];    // token index (float)
+const P_KIND=[];   // kind
+const P_COL=[];    // rgb base
+const P_PARM=[];   // (p0,p1,p2,p3) per-kind params
+
+function push(kind, tok, col, a0,a1, p0,p1,p2,p3){
+  P_KIND.push(kind); P_TOK.push(tok); P_COL.push(col[0],col[1],col[2]);
+  P_POS.push(a0,a1); P_PARM.push(p0,p1,p2,p3);
+}
+
+// token uniforms (packed into arrays indexed by token)
+const TX=[],TY=[],THUE=[],TCORE=[],THALO=[],TPOW=[],TTHR=[],TATT=[],TMOOD=[],TEVENT=[];
+const MOOD_ID={OBSERVING:0,ACCUMULATION:1,ATTACK:2,DOMINANCE:3,DISTRIBUTION:4,BLEEDING:5,COLLAPSE:6,DORMANT:7,EMERGING:8,UNKNOWN:0};
+WORLDS.forEach((w,i)=>{ TX[i]=w.x;TY[i]=w.y;THUE[i]=w.hue;TCORE[i]=w.core;THALO[i]=w.haloR;
+  TPOW[i]=w.power/100;TTHR[i]=w.threat/100;TATT[i]=w.attention/100;TMOOD[i]=MOOD_ID[w.mood]||0;TEVENT[i]=w.event?(w.event==="BUY_CLUSTER"?1:2):0; });
+
+function hsv(h,s,v){h=(h%1+1)%1;const i=Math.floor(h*6),f=h*6-i,p=v*(1-s),q=v*(1-f*s),t=v*(1-(1-f)*s);return [[v,t,p],[q,v,p],[p,v,t],[p,q,v],[t,p,v],[v,p,q]][i%6];}
+
+// --- cores: 3 layers each ---
+WORLDS.forEach((w,i)=>{ const base=hsv(w.hue,0.5,1.0);
+  const layers=[[3.1,0.16],[1.8,0.4],[1.0,1.0]];
+  layers.forEach(([sm,br])=>push(0,i,[base[0]*br,base[1]*br,base[2]*br], 0,0, sm,0,0,0)); });
+
+// --- halos: ring of points ---
+const HALO=26;
+WORLDS.forEach((w,i)=>{ for(let k=0;k<HALO;k++){ const ang=k/HALO*6.2831; push(1,i,[1,1,1], ang,Math.random(), 0,0,0,0); } });
+
+// --- wallets + flows (gravity-curved) ---
+const wallets=[]; // keep minimal CPU copy for beams + picking sizes
+WORLDS.forEach((w,i)=>{ w.flow.forEach(([side,lane,usd],idx)=>{
+  const hue=side==="sell"?EXIT:(LANE[lane]||LANE.OTHER);
+  const whale=usd>=7000;
+  const ang=idx/Math.max(1,w.flow.length)*6.2831 + Math.random()*0.3;
+  const rad=w.haloR+0.05+Math.random()*0.02;
+  const size=4+Math.min(18,Math.pow(usd/1000,0.85)*1.6);
+  // wallet node
+  push(2,i,hue, ang,rad, size,whale?1:0,(side==="buy"?1:-1),0);
+  wallets.push({i,ang,rad,hue,whale,side});
+  // flow particles for this stream — count scales with USD, capped
+  const count=Math.max(5,Math.min(32,Math.round(usd/450)));
+  for(let c=0;c<count;c++){
+    const seed=Math.random();
+    const spread=(Math.random()-0.5)*0.5;
+    push(3,i,hue, ang+spread, rad, seed, side==="buy"?1:-1, whale?1:0, Math.random()*6.28);
+  }
+});});
+
+// --- shockwave rings for event tokens ---
+const SHOCK=54;
+WORLDS.forEach((w,i)=>{ if(w.event){ const hue=w.event==="BUY_CLUSTER"?[0.31,0.82,0.66]:EXIT;
+  for(let k=0;k<SHOCK;k++){ push(4,i,hue, k/SHOCK*6.2831, Math.random(), 0,0,0,0); } } });
+
+// --- cosmic dust: ambient drifting motes across the arena (pure GPU) ---
+const DUST=1200;
+for(let k=0;k<DUST;k++){
+  const a0=Math.random(), a1=Math.random();
+  const shade=0.3+Math.random()*0.5;
+  push(5,-1,[0.6*shade,0.7*shade,1.0*shade], a0,a1, Math.random(),Math.random(),0,0);
+}
+
+const COUNT=P_KIND.length;
+// beams (CPU line copy) — cheap
+const bLine=gl.createBuffer(), bLineCol=gl.createBuffer();
+const linePos=new Float32Array(wallets.length*4), lineCol=new Float32Array(wallets.length*6);
+
+// ---------- GL program (all animation in vertex shader) ----------
+const VS=`
+precision highp float;
+attribute vec2 aSeed;      // generic seeds (angle/seed or dust xy)
+attribute float aTok;      // token index (-1 = global)
+attribute float aKind;     // 0 core,1 halo,2 wallet,3 flow,4 shock,5 dust
+attribute vec3 aCol;
+attribute vec4 aParm;      // per-kind params
+uniform float uAsp, uZoom, uClock;
+uniform vec2 uCam;
+// packed token uniforms (3 vec4 arrays instead of 11 float arrays — GPU-friendly)
+// A = (x, y, hue, core) ; B = (haloR, pow, thr, att) ; C = (mood, event, focus, _)
+uniform vec4 uA[8], uB[8], uC[8];
+varying vec3 vCol; varying float vAlpha; varying float vStar;
+
+float hash(float n){ return fract(sin(n)*43758.5453123); }
+
+void main(){
+  int ti = int(aTok);
+  vec2 tp = vec2(0.0);
+  float focus = 1.0;
+  float ux=0.0,uy=0.0,uhue=0.0,ucore=0.0,uhalo=0.06,upow=0.5,uthr=0.3,uatt=0.5,umood=0.0,uevent=0.0;
+  if(aTok >= 0.0){
+    for(int i=0;i<8;i++){ if(i==ti){
+      ux=uA[i].x;uy=uA[i].y;uhue=uA[i].z;ucore=uA[i].w;
+      uhalo=uB[i].x;upow=uB[i].y;uthr=uB[i].z;uatt=uB[i].w;
+      umood=uC[i].x;uevent=uC[i].y;focus=uC[i].z;
+    } }
+    tp=vec2(ux,uy);
+  }
+  vec2 p = tp;
+  float size = 2.0;
+  vec3 col = aCol;
+  float alpha = 1.0;
+  float star = 0.0;   // starburst intensity (cores + whales only)
+  float T = uClock;
+
+  if(aKind < 0.5){                 // ---- CORE (3 layers) ----
+    float sm = aParm.x;
+    float pulse = (umood>1.5&&umood<2.5)? (1.0+0.05*sin(T*3.0)) : (umood>2.5&&umood<3.5)?1.03 : (umood>6.5)?0.85 : 1.0;
+    float jit = uthr*0.002*sin(T*4.0+float(ti)*3.0);
+    p += vec2(jit,jit*0.7);
+    size = ucore*pulse*sm;
+    col *= focus;
+    // brightest (innermost) layer gets a starburst scaled by attention
+    if(sm < 1.2){ star = (0.5+0.8*uatt)*focus; }
+  } else if(aKind < 1.5){          // ---- HALO ring ----
+    float ang=aSeed.x + T*0.08*((umood>1.5&&umood<2.5)?1.6:1.0);
+    float rad=uhalo*(0.92+0.12*sin(T*1.5+aSeed.y*6.0));
+    float agit=uthr*0.018*sin(T*9.0+aSeed.x*5.0+aSeed.y*10.0);
+    p += vec2(cos(ang)*(rad+agit), sin(ang)*(rad+agit)*0.8);
+    float br=(0.22+0.32*upow+0.34*uthr)*(0.6+0.4*sin(T*3.0+aSeed.x*3.0));
+    col = vec3((0.32*upow+1.0*uthr)*br,(0.55*upow+0.34*uthr)*br,(1.0*upow+0.40*uthr)*br);
+    size=(1.8+2.6*uatt); col*=focus;
+  } else if(aKind < 2.5){          // ---- WALLET node ----
+    float baseAng=aSeed.x, rad=aSeed.y;
+    float dir=aParm.z, whale=aParm.y;
+    float ang=baseAng + T*(0.12+0.06*hash(aSeed.x))*dir;
+    p += vec2(cos(ang)*rad, sin(ang)*rad*0.8);
+    float pulse = whale>0.5 ? (1.0+0.22*sin(T*4.0+ang*2.0)) : 1.0;
+    float tw = ((whale>0.5?0.9:0.7)+0.3*sin(T*3.0+ang*4.0))*focus;
+    col = aCol*tw; size = aParm.x*pulse;
+    if(whale>0.5){ star = 0.4*focus; }
+  } else if(aKind < 3.5){          // ---- FLOW particle (gravity-curved) ----
+    float ang=aSeed.x, rad=aSeed.y;
+    float seed=aParm.x, dir=aParm.y, whale=aParm.z, wob=aParm.w;
+    float speed=0.16+0.12*hash(seed*7.0);
+    float t=fract(seed + T*speed);
+    float prog = dir>0.0 ? (1.0-t) : t;         // 0 at token .. 1 outer
+    // BUY (dir>0): flows INWARD, tightens toward core, bright & bold
+    // SELL (dir<0): flows OUTWARD, spreads & fades, exit feel
+    float curve = (1.0-prog)*(1.0-prog)*0.12*(whale>0.5?1.4:1.0);
+    float rr = prog*rad;
+    float a2 = ang + curve*sin(T*0.6+seed*6.28);
+    vec2 wobv = vec2(sin(T*4.0+wob), cos(T*3.5+wob))*0.004*(1.0-abs(prog-0.5)*2.0);
+    p += vec2(cos(a2)*rr, sin(a2)*rr*0.8) + wobv;
+    float headFade=sin(prog*3.14159);
+    if(dir>0.0){                    // INFLOW — brighter, larger, denser near core
+      float b=headFade*(whale>0.5?2.1:1.7)*(0.65+0.5*(1.0-prog));
+      col = aCol*b*focus; size=(2.2+5.5*headFade*(1.0-prog*0.35)*(whale>0.5?1.3:1.0));
+    } else {                        // OUTFLOW — spreads out, dims as it leaves
+      float b=headFade*1.25*(0.45+0.65*prog);
+      col = aCol*b*focus; size=(1.8+3.6*headFade);
+    }
+  } else if(aKind < 4.5){          // ---- SHOCKWAVE ----
+    float period=5.0; float ph=fract((T+aSeed.y*period)/period);
+    float R=ph*(uhalo*3.4); float fade=1.0-ph;
+    float ang=aSeed.x;
+    p += vec2(cos(ang)*R, sin(ang)*R*0.8);
+    col = aCol*fade*0.9*focus; size=(1.4+2.2*fade);
+    if(uevent<0.5) alpha=0.0;
+  } else {                          // ---- COSMIC DUST (global drift, depth haze) ----
+    vec2 d = aSeed*2.0-1.0;
+    d.x += 0.06*sin(T*0.05 + aSeed.y*6.28);
+    d.y += 0.04*cos(T*0.04 + aSeed.x*6.28);
+    p = d*0.9;
+    float depth = aParm.x;            // 0..1 pseudo-depth
+    float tw=0.4+0.6*abs(sin(T*0.5+aSeed.x*10.0));
+    // depth haze: far motes dimmer & smaller (atmospheric depth)
+    col = aCol*tw*0.5*(0.4+0.6*depth); size=(0.8+1.6*depth);
+  }
+
+  vec2 sp=(p-uCam)*uZoom;
+  gl_Position=vec4(sp.x/uAsp, sp.y, 0.0, 1.0);
+  gl_PointSize=max(1.0,size*uZoom);
+  vCol=col; vAlpha=alpha; vStar=star;
+}`;
+const FS=`precision highp float;varying vec3 vCol;varying float vAlpha;varying float vStar;
+// single-pass cinematic: soft bloom falloff + starburst + HDR tone-map (ACES-ish)
+vec3 tonemap(vec3 x){ // filmic tone-map so bright cores bloom to white gracefully
+  return (x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14);
+}
+void main(){
+  if(vAlpha<0.01)discard;
+  vec2 u=gl_PointCoord-0.5; float d=length(u);
+  if(d>0.5)discard;
+  // soft bloom: gentler falloff, less overpowering
+  float core=exp(-d*d*11.0);             // tighter, dimmer center
+  float halo=exp(-d*d*4.0)*0.38;         // softer, smaller glow
+  float glow=core+halo;
+  // starburst: thinner, subtler rays
+  float ang=atan(u.y,u.x);
+  float rays=(pow(abs(cos(ang*2.0)),40.0)+pow(abs(sin(ang*2.0)),40.0));
+  float star=rays*smoothstep(0.5,0.0,d)*vStar;
+  glow+=star*0.32;
+  // HDR: gentler over-bright
+  vec3 c=mix(vCol, vec3(1.0,0.98,0.92), pow(core,3.0)*0.5);
+  c*=glow*1.05;                          // reduced from 1.35
+  c=tonemap(c);
+  float a=clamp(glow,0.0,1.0)*vAlpha;
+  gl_FragColor=vec4(c, a);
+}`;
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);
+  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))console.error("shader:",gl.getShaderInfoLog(o));return o;}
+const prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,VS));gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS))console.error("link:",gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+
+// simple line program for beams
+const LVS=`attribute vec2 aP;attribute vec3 aC;uniform float uAsp,uZoom;uniform vec2 uCam;varying vec3 vC;
+void main(){vec2 p=(aP-uCam)*uZoom;gl_Position=vec4(p.x/uAsp,p.y,0.,1.);vC=aC;}`;
+const LFS=`precision highp float;varying vec3 vC;void main(){gl_FragColor=vec4(vC,1.0);}`;
+const lprog=gl.createProgram();gl.attachShader(lprog,sh(gl.VERTEX_SHADER,LVS));gl.attachShader(lprog,sh(gl.FRAGMENT_SHADER,LFS));gl.linkProgram(lprog);
+const laP=gl.getAttribLocation(lprog,"aP"),laC=gl.getAttribLocation(lprog,"aC");
+const luAsp=gl.getUniformLocation(lprog,"uAsp"),luCam=gl.getUniformLocation(lprog,"uCam"),luZoom=gl.getUniformLocation(lprog,"uZoom");
+
+// upload static attribute buffers
+function buf(data,loc,size){const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);return b;}
+const aSeed=gl.getAttribLocation(prog,"aSeed"),aTok=gl.getAttribLocation(prog,"aTok"),aKind=gl.getAttribLocation(prog,"aKind"),aCol=gl.getAttribLocation(prog,"aCol"),aParm=gl.getAttribLocation(prog,"aParm");
+buf(P_POS,aSeed,2); buf(P_TOK,aTok,1); buf(P_KIND,aKind,1); buf(P_COL,aCol,3); buf(P_PARM,aParm,4);
+
+// uniforms
+const uAsp=gl.getUniformLocation(prog,"uAsp"),uZoom=gl.getUniformLocation(prog,"uZoom"),uClock=gl.getUniformLocation(prog,"uClock"),uCam=gl.getUniformLocation(prog,"uCam");
+function uarr(name){return gl.getUniformLocation(prog,name);}
+const U={A:uarr("uA"),B:uarr("uB"),C:uarr("uC"),FOCUS:null};
+gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+// set the static token uniforms once — packed: A=(x,y,hue,core) B=(halo,pow,thr,att) C=(mood,event,focus,0)
+gl.useProgram(prog);
+const packA=new Float32Array(32), packB=new Float32Array(32), packC=new Float32Array(32);
+for(let i=0;i<8;i++){
+  packA[i*4]=TX[i]||0;packA[i*4+1]=TY[i]||0;packA[i*4+2]=THUE[i]||0;packA[i*4+3]=TCORE[i]||0;
+  packB[i*4]=THALO[i]||0;packB[i*4+1]=TPOW[i]||0;packB[i*4+2]=TTHR[i]||0;packB[i*4+3]=TATT[i]||0;
+  packC[i*4]=TMOOD[i]||0;packC[i*4+1]=TEVENT[i]||0;packC[i*4+2]=1;packC[i*4+3]=0;
+}
+gl.uniform4fv(U.A,packA);gl.uniform4fv(U.B,packB);gl.uniform4fv(U.C,packC);
+
+// ---------- camera + focus ----------
+let zoom=0.62,tZoom=1,camX=0,camY=0.06,introT=0;const introDur=2.6;
+const easeOut=x=>1-Math.pow(1-x,3);
+let focus=-1,hover=-1;
+cv.addEventListener("wheel",e=>{e.preventDefault();tZoom*=e.deltaY<0?1.12:0.89;tZoom=Math.max(0.6,Math.min(3.2,tZoom));introT=1;},{passive:false});
+let pinch=0;
+cv.addEventListener("touchmove",e=>{if(e.touches.length===2){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY,d=Math.hypot(dx,dy);if(pinch){tZoom*=d/pinch;tZoom=Math.max(0.6,Math.min(3.2,tZoom));introT=1;}pinch=d;}},{passive:false});
+cv.addEventListener("touchend",()=>pinch=0);
+function pickToken(px,py){const wx=((px/innerWidth)*2-1)*ASP/zoom+camX,wy=((0.5-py/innerHeight)*2)/zoom+camY;let best=-1,bd=1e9;WORLDS.forEach((w,i)=>{const d=(w.x-wx)**2+(w.y-wy)**2;if(d<bd){bd=d;best=i;}});return bd<0.02?best:-1;}
+cv.addEventListener("click",e=>{const b=cv.getBoundingClientRect();const p=pickToken(e.clientX-b.left,e.clientY-b.top);focus=(p===focus)?-1:p;
+  document.getElementById("hint").textContent = focus>=0 ? (WORLDS[focus].sym+" — "+WORLDS[focus].mood+" · power "+WORLDS[focus].power+" · threat "+WORLDS[focus].threat+" · attention "+WORLDS[focus].attention) : "tap a token to inspect · pinch / scroll to zoom";});
+cv.addEventListener("mousemove",e=>{if(matchMedia&&matchMedia("(pointer:coarse)").matches)return;const b=cv.getBoundingClientRect();hover=pickToken(e.clientX-b.left,e.clientY-b.top);});
+
+// labels — with a beginner-friendly IN/OUT flow badge
+function netFlow(w){ let inUsd=0,outUsd=0; (w.flow||[]).forEach(([side,lane,usd])=>{ if(side==="buy")inUsd+=usd; else outUsd+=usd; }); return {inUsd,outUsd,net:inUsd-outUsd}; }
+function usd0(n){ return "$"+Math.round(n).toLocaleString(); }
+const layer=document.getElementById("labels");
+const labels=WORLDS.map(w=>{const d=document.createElement("div");d.className="tk";const c=MOOD_HEX[w.mood]||"#93a0b5";
+  const nf=netFlow(w);
+  let badge="";
+  if(nf.inUsd>0||nf.outUsd>0){
+    const inflow = nf.net>=0;
+    const col = inflow ? "#4fd0a8" : "#ff5d6c";
+    const arrow = inflow ? "▼ IN" : "▲ OUT";   // ▼ into the star / ▲ out of it
+    const amt = usd0(Math.abs(nf.net));
+    badge="<div class='fb' style='color:"+col+";border-color:"+col+"55'>"+arrow+" "+amt+"</div>";
+  } else {
+    badge="<div class='fb' style='color:#5a6577;border-color:#5a657755'>— no flow</div>";
+  }
+  d.innerHTML="<div class='s' style='color:"+c+";text-shadow:0 0 12px "+c+"'>"+w.sym+"</div><div class='m' style='color:"+c+"'>"+w.mood+"</div>"+badge;
+  d.onclick=()=>{focus=WORLDS.indexOf(w);};layer.appendChild(d);return d;});
+function w2s(x,y){const px=(x-camX)*zoom,py=(y-camY)*zoom;return{x:(px/ASP*0.5+0.5)*innerWidth,y:(0.5-py*0.5)*innerHeight};}
+
+// ---------- frame (CPU does almost nothing) ----------
+let t0=performance.now(),fT=0,fN=0;
+function frame(now){
+  const dt=Math.min(0.05,(now-t0)/1000);t0=now;const T=now/1000;
+  // camera
+  if(introT<1){introT=Math.min(1,introT+dt/introDur);const e=easeOut(introT);zoom=0.62+(1-0.62)*e;camY=0.06+(0-0.06)*e;}
+  else zoom+=(tZoom-zoom)*0.08;
+  const driftX=Math.sin(T*0.06)*0.018,driftY=Math.cos(T*0.045)*0.012;
+  camX=driftX;if(introT>=1)camY=driftY;
+  // focus blend — write into packed C.z
+  const active=focus>=0?focus:hover;
+  for(let i=0;i<8;i++){const tgt=active<0?1:(i===active?1.35:0.4);const cur=packC[i*4+2];packC[i*4+2]=cur+(tgt-cur)*0.12;}
+
+  drawBG(T);
+
+  // beams (cheap CPU line update)
+  let li=0;
+  for(const wl of wallets){const w=WORLDS[wl.i];const ang=wl.ang;const rad=wl.rad;
+    const wx=w.x+Math.cos(ang+T*0.13*(wl.side==="buy"?1:-1))*rad, wy=w.y+Math.sin(ang+T*0.13*(wl.side==="buy"?1:-1))*rad*0.8;
+    const a=(wl.whale?0.5:0.26)*(focus<0?1:(wl.i===active?1.2:0.35));
+    linePos[li*4]=wx;linePos[li*4+1]=wy;linePos[li*4+2]=w.x;linePos[li*4+3]=w.y;
+    lineCol[li*6]=wl.hue[0]*a;lineCol[li*6+1]=wl.hue[1]*a;lineCol[li*6+2]=wl.hue[2]*a;
+    lineCol[li*6+3]=wl.hue[0]*a*0.12;lineCol[li*6+4]=wl.hue[1]*a*0.12;lineCol[li*6+5]=wl.hue[2]*a*0.12;li++;}
+
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  // beams first
+  if(li>0){gl.useProgram(lprog);gl.uniform1f(luAsp,ASP);gl.uniform2f(luCam,camX,camY);gl.uniform1f(luZoom,zoom);
+    gl.bindBuffer(gl.ARRAY_BUFFER,bLine);gl.bufferData(gl.ARRAY_BUFFER,linePos.subarray(0,li*4),gl.DYNAMIC_DRAW);gl.enableVertexAttribArray(laP);gl.vertexAttribPointer(laP,2,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,bLineCol);gl.bufferData(gl.ARRAY_BUFFER,lineCol.subarray(0,li*6),gl.DYNAMIC_DRAW);gl.enableVertexAttribArray(laC);gl.vertexAttribPointer(laC,3,gl.FLOAT,false,0,0);
+    gl.drawArrays(gl.LINES,0,li*2);}
+  // particles: rebind attributes for point program
+  gl.useProgram(prog);
+  gl.uniform1f(uAsp,ASP);gl.uniform1f(uZoom,zoom);gl.uniform1f(uClock,T);gl.uniform2f(uCam,camX,camY);
+  gl.uniform4fv(U.C,packC);
+  rebind();
+  gl.drawArrays(gl.POINTS,0,COUNT);
+
+  // labels
+  WORLDS.forEach((w,i)=>{const s=w2s(w.x,w.y-w.haloR-0.045);const el=labels[i];el.style.left=s.x+"px";el.style.top=s.y+"px";el.style.opacity=zoom>0.8?1:0.65;});
+
+  // fps
+  fT+=dt;fN++;if(fT>=0.5){document.getElementById("fps").textContent=Math.round(fN/fT)+" fps · "+COUNT+" pts";fT=0;fN=0;}
+  requestAnimationFrame(frame);
+}
+// rebind static buffers to the point program each frame (line program clobbers attrib 0/1)
+let staticBufs=null;
+function captureBufs(){ staticBufs={aSeed:{loc:aSeed,data:P_POS,size:2},aTok:{loc:aTok,data:P_TOK,size:1},aKind:{loc:aKind,data:P_KIND,size:1},aCol:{loc:aCol,data:P_COL,size:3},aParm:{loc:aParm,data:P_PARM,size:4}};
+  for(const k in staticBufs){const s=staticBufs[k];s.buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,s.buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(s.data),gl.STATIC_DRAW);} }
+function rebind(){ for(const k in staticBufs){const s=staticBufs[k];gl.bindBuffer(gl.ARRAY_BUFFER,s.buffer);gl.enableVertexAttribArray(s.loc);gl.vertexAttribPointer(s.loc,s.size,gl.FLOAT,false,0,0);} }
+
+resize(); captureBufs();
+if(gl){ requestAnimationFrame(frame); } else { document.getElementById("hint").textContent="WebGL unavailable"; }
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+node_modules
+dist
+.git
+_backup-*
+*.ps1
+tests
+.env

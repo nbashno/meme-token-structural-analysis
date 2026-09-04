@@ -1,0 +1,21 @@
+{
+    "extends":  "./tsconfig.json",
+    "compilerOptions":  {
+                            "lib":  [
+                                        "ES2022",
+                                        "DOM",
+                                        "DOM.Iterable"
+                                    ],
+                            "types":  [
+
+                                      ],
+                            "noEmit":  true
+                        },
+    "include":  [
+                    "src/experience"
+                ],
+    "exclude":  [
+                    "node_modules",
+                    "dist"
+                ]
+}

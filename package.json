@@ -1,0 +1,30 @@
+{
+    "name": "war-engine",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "WAR Ã¢â‚¬â€ deterministic temporal market-intelligence engine. Renderer-agnostic core. Phase 1 skeleton.",
+    "engines": {
+        "node": ">=22"
+    },
+    "scripts": {
+        "typecheck": "tsc --noEmit",
+        "build": "tsc",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:arch": "vitest run tests/architecture",
+        "typecheck:experience": "tsc -p tsconfig.experience.json",
+        "start": "node dist/src/deploy/server.js"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "@types/pg": "^8.23.1",
+        "fast-check": "^3.22.0",
+        "typescript": "^5.5.0",
+        "vitest": "^2.1.0"
+    },
+    "dependencies": {
+        "pg": "^8.23.0",
+        "pixi.js": "^8"
+    }
+}

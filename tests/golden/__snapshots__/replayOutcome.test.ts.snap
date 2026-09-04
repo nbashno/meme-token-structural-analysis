@@ -1,0 +1,111 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`replay - anti-lookahead > GOLDEN: replay reconstruction is byte-identical across runs 1`] = `
+[
+  {
+    "at": 1000,
+    "state": {
+      "correlations": [],
+      "generatedAt": 1000,
+      "globalAttention": 0,
+      "marketRegime": "QUIET",
+      "modelVersions": {
+        "activationModelVersion": "activation-v1",
+        "confidenceModelVersion": "confidence-v2",
+        "configurationVersion": "config-v1",
+        "engineVersion": "war-engine-0.1.0",
+        "featureModelVersion": "feature-v1",
+        "physicsModelVersion": "physics-none",
+        "powerModelVersion": "power-v1",
+        "stateModelVersion": "state-v1",
+      },
+      "rankings": [],
+      "tokens": [],
+    },
+  },
+  {
+    "at": 2000,
+    "state": {
+      "correlations": [],
+      "generatedAt": 2000,
+      "globalAttention": 0,
+      "marketRegime": "QUIET",
+      "modelVersions": {
+        "activationModelVersion": "activation-v1",
+        "confidenceModelVersion": "confidence-v2",
+        "configurationVersion": "config-v1",
+        "engineVersion": "war-engine-0.1.0",
+        "featureModelVersion": "feature-v1",
+        "physicsModelVersion": "physics-none",
+        "powerModelVersion": "power-v1",
+        "stateModelVersion": "state-v1",
+      },
+      "rankings": [],
+      "tokens": [],
+    },
+  },
+  {
+    "at": 3000,
+    "state": {
+      "correlations": [],
+      "generatedAt": 3000,
+      "globalAttention": 0,
+      "marketRegime": "QUIET",
+      "modelVersions": {
+        "activationModelVersion": "activation-v1",
+        "confidenceModelVersion": "confidence-v2",
+        "configurationVersion": "config-v1",
+        "engineVersion": "war-engine-0.1.0",
+        "featureModelVersion": "feature-v1",
+        "physicsModelVersion": "physics-none",
+        "powerModelVersion": "power-v1",
+        "stateModelVersion": "state-v1",
+      },
+      "rankings": [],
+      "tokens": [],
+    },
+  },
+  {
+    "at": 4000,
+    "state": {
+      "correlations": [],
+      "generatedAt": 4000,
+      "globalAttention": 0,
+      "marketRegime": "RISK_ON",
+      "modelVersions": {
+        "activationModelVersion": "activation-v1",
+        "confidenceModelVersion": "confidence-v2",
+        "configurationVersion": "config-v1",
+        "engineVersion": "war-engine-0.1.0",
+        "featureModelVersion": "feature-v1",
+        "physicsModelVersion": "physics-none",
+        "powerModelVersion": "power-v1",
+        "stateModelVersion": "state-v1",
+      },
+      "rankings": [],
+      "tokens": [],
+    },
+  },
+  {
+    "at": 5000,
+    "state": {
+      "correlations": [],
+      "generatedAt": 5000,
+      "globalAttention": 0,
+      "marketRegime": "RISK_ON",
+      "modelVersions": {
+        "activationModelVersion": "activation-v1",
+        "confidenceModelVersion": "confidence-v2",
+        "configurationVersion": "config-v1",
+        "engineVersion": "war-engine-0.1.0",
+        "featureModelVersion": "feature-v1",
+        "physicsModelVersion": "physics-none",
+        "powerModelVersion": "power-v1",
+        "stateModelVersion": "state-v1",
+      },
+      "rankings": [],
+      "tokens": [],
+    },
+  },
+]
+`;

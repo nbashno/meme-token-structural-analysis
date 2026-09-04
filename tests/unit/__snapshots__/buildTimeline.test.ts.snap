@@ -1,0 +1,128 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildTokenTimeline — golden snapshot > matches the frozen golden output 1`] = `
+{
+  "ok": true,
+  "timeline": {
+    "address": "So11111111111111111111111111111111111111112",
+    "analytics": [
+      {
+        "bundlerRate": null,
+        "buys": 180,
+        "holderCount": 1200,
+        "isWashTrading": null,
+        "liquidity": 50000,
+        "marketCap": 1000000,
+        "meta": {
+          "at": 1700000250000,
+          "coverage": "SAMPLED",
+          "provenance": "market.trending",
+          "temporalOrigin": "WAR_SAMPLED",
+        },
+        "price": 1.1,
+        "renownedCount": 2,
+        "rugRatio": null,
+        "sells": 120,
+        "smartDegenCount": 5,
+        "swaps": 300,
+        "top10HolderRate": null,
+      },
+    ],
+    "chain": "sol",
+    "flow": [
+      {
+        "amountUsd": 500,
+        "direction": "OPEN",
+        "fullness": "UNKNOWN",
+        "maker": "walletA",
+        "meta": {
+          "at": 1700000120000,
+          "coverage": "ROLLING",
+          "provenance": "track.smartmoney",
+          "temporalOrigin": "GMGN_EVENT",
+        },
+        "positionEvent": "OPEN_OR_ADD",
+        "priceUsd": 1,
+        "side": "buy",
+      },
+      {
+        "amountUsd": 700,
+        "direction": "CLOSE",
+        "fullness": "UNKNOWN",
+        "maker": "walletC",
+        "meta": {
+          "at": 1700000120000,
+          "coverage": "ROLLING",
+          "provenance": "track.smartmoney",
+          "temporalOrigin": "GMGN_EVENT",
+        },
+        "positionEvent": "CLOSE_OR_REDUCE",
+        "priceUsd": 1,
+        "side": "sell",
+      },
+      {
+        "amountUsd": 1000,
+        "direction": "OPEN",
+        "fullness": "UNKNOWN",
+        "maker": "walletB",
+        "meta": {
+          "at": 1700000150000,
+          "coverage": "ROLLING",
+          "provenance": "track.smartmoney",
+          "temporalOrigin": "GMGN_EVENT",
+        },
+        "positionEvent": "OPEN_OR_ADD",
+        "priceUsd": 1,
+        "side": "buy",
+      },
+    ],
+    "flowObservedFor": 480000,
+    "market": [
+      {
+        "amountTokens": 3000,
+        "close": 10,
+        "high": 12,
+        "low": 8,
+        "meta": {
+          "at": 1700000100000,
+          "coverage": "COMPLETE",
+          "provenance": "market.kline",
+          "temporalOrigin": "GMGN_HISTORICAL",
+        },
+        "open": 9,
+        "volumeUsd": 300,
+      },
+      {
+        "amountTokens": 4000,
+        "close": 11,
+        "high": 13,
+        "low": 9,
+        "meta": {
+          "at": 1700000200000,
+          "coverage": "COMPLETE",
+          "provenance": "market.kline",
+          "temporalOrigin": "GMGN_HISTORICAL",
+        },
+        "open": 10,
+        "volumeUsd": 400,
+      },
+      {
+        "amountTokens": 5000,
+        "close": 12,
+        "high": 14,
+        "low": 10,
+        "meta": {
+          "at": 1700000300000,
+          "coverage": "COMPLETE",
+          "provenance": "market.kline",
+          "temporalOrigin": "GMGN_HISTORICAL",
+        },
+        "open": 11,
+        "volumeUsd": 500,
+      },
+    ],
+    "windowEnd": 1700000300000,
+    "windowStart": 1700000100000,
+  },
+}
+`;
