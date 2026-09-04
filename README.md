@@ -153,3 +153,14 @@ commitment.
 
 MIT  -  see [LICENSE](./LICENSE). In short: do what you want, keep the copyright
 notice, no warranty.
+
+---
+
+## Support
+
+WAR ARENA is free and open source, built and maintained in spare time.
+It will always be free. If it helped you and you'd like to say thanks,
+a tip is appreciated but never expected - enjoy the project either way.
+
+- Solana: `CxpR2rTWrQbsv2cEV5HJwpFMjYBhiURP6YJzJxxzo28P`
+- EVM (ETH / BSC / Base): `0xA2fBd68B58C2Ac4194Fbbad82d2751467dE84A24`
